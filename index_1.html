@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Obrona Zamku — Łucznik VR</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,-apple-system,sans-serif;}
+  #overlay{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;
+    background:rgba(20,28,45,.82);color:#f3eede;text-align:center;}
+  #overlay .panel{max-width:520px;padding:32px;}
+  #overlay h1{font-size:30px;margin:0 0 8px;letter-spacing:.5px;}
+  #overlay p{font-size:16px;line-height:1.6;color:#d9d2bd;margin:6px 0;}
+  #overlay button{margin-top:18px;padding:14px 28px;font-size:18px;border:none;border-radius:10px;
+    background:#c8732e;color:#fff;cursor:pointer;font-weight:600;}
+  #overlay button:hover{background:#dd8338;}
+  #overlay small{display:block;margin-top:16px;color:#9fae8c;font-size:13px;line-height:1.5;}
+  .hidden{display:none!important;}
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <div class="panel">
+    <h1 id="ov-title">Obrona Zamku</h1>
+    <p id="ov-body">Nadciągają wrogowie. Stań na murach i broń bramy łukiem.</p>
+    <p id="ov-controls"></p>
+    <button id="ov-btn">Rozpocznij obronę</button>
+    <small>W goglach Quest 3: otwórz tę stronę w przeglądarce i kliknij „Enter VR".<br>
+    Na komputerze: celuj myszką, przytrzymaj lewy przycisk by naciągnąć, puść by strzelić.</small>
+  </div>
+</div>
+
+<a-scene id="scene" background="color: #bcd2ea" fog="type: linear; color: #cdd9e8; near: 18; far: 90"
+         renderer="antialias: true; colorManagement: true">
+
+  <a-assets>
+    <a-mixin id="enemy-mat" material="color: #6b4a3a; roughness: 0.85"></a-mixin>
+  </a-assets>
+
+  <!-- Niebo i słońce (dzień) -->
+  <a-sky color="#bcd2ea"></a-sky>
+  <a-light type="ambient" color="#cfd6dd" intensity="0.9"></a-light>
+  <a-light type="directional" color="#fff6e0" intensity="0.9" position="-8 14 6"></a-light>
+
+  <!-- Teren przed zamkiem -->
+  <a-plane position="0 0 -10" rotation="-90 0 0" width="120" height="120" color="#7e9a5a"></a-plane>
+  <!-- Droga do bramy -->
+  <a-plane position="0 0.02 -10" rotation="-90 0 0" width="7" height="120" color="#9c8c63"></a-plane>
+
+  <!-- ===== ZAMEK: mur, na którym stoi gracz ===== -->
+  <a-box position="0 3 4.5" width="26" height="6" depth="2" color="#9a9389" roughness="0.95"></a-box>
+  <!-- Blanki -->
+  <a-entity id="merlons"></a-entity>
+  <!-- Platforma gracza (chodnik straży) -->
+  <a-box position="0 5.6 5.4" width="26" height="0.4" depth="3" color="#857f74"></a-box>
+  <!-- Wieże po bokach -->
+  <a-cylinder position="-12 4.5 4.5" radius="2.4" height="9" color="#8d867c"></a-cylinder>
+  <a-cylinder position="12 4.5 4.5" radius="2.4" height="9" color="#8d867c"></a-cylinder>
+  <a-cone position="-12 9.6 4.5" radius-bottom="2.8" radius-top="0" height="2.5" color="#7a4a3a"></a-cone>
+  <a-cone position="12 9.6 4.5" radius-bottom="2.8" radius-top="0" height="2.5" color="#7a4a3a"></a-cone>
+  <!-- Brama (cel wrogów) -->
+  <a-box id="gate" position="0 2.2 5.4" width="4" height="4.4" depth="0.5" color="#5a3d28"></a-box>
+
+  <!-- Kontener na wrogów i strzały -->
+  <a-entity id="enemies"></a-entity>
+  <a-entity id="arrows"></a-entity>
+
+  <!-- HUD przyczepiony do widoku -->
+  <a-entity id="hud" position="0 0 -1.4">
+    <a-text id="hud-score" value="" align="left" position="-0.55 0.34 0" width="1.4" color="#1c2a14"></a-text>
+    <a-text id="hud-wave"  value="" align="center" position="0 0.34 0" width="1.4" color="#1c2a14"></a-text>
+    <a-text id="hud-hp"    value="" align="right" position="0.55 0.34 0" width="1.4" color="#7a1414"></a-text>
+    <a-text id="hud-msg"   value="" align="center" position="0 0.12 0" width="1.6" color="#3a2a10"></a-text>
+  </a-entity>
+
+  <!-- Gracz: na murze, ~5.6 wysokości -->
+  <a-entity id="rig" position="0 5.6 6.2">
+    <a-camera id="cam" position="0 1.6 0" look-controls wasd-controls="enabled:false">
+      <a-cursor color="#c8732e" raycaster="objects: .ui" fuse="false"
+                geometry="primitiveType: ring; radiusInner: 0.012; radiusOuter: 0.02"></a-cursor>
+    </a-camera>
+
+    <!-- Kontrolery VR -->
+    <a-entity id="bowhand" oculus-touch-controls="hand: left"  meta-touch-controls="hand: left"></a-entity>
+    <a-entity id="drawhand" oculus-touch-controls="hand: right" meta-touch-controls="hand: right"></a-entity>
+  </a-entity>
+
+  <!-- Panel ulepszeń (między falami) -->
+  <a-entity id="shop" class="ui" visible="false" position="0 6.8 2.5" rotation="0 0 0">
+    <a-plane width="3.2" height="1.9" color="#23314a" opacity="0.94"></a-plane>
+    <a-text value="Ulepszenia" align="center" position="0 0.72 0.01" width="3" color="#f3eede"></a-text>
+
+    <a-entity class="ui buy" data-buy="dmg" position="-1 0.18 0.02">
+      <a-plane width="1.9" height="0.4" color="#3a4d2c"></a-plane>
+      <a-text class="buy-label" value="" align="center" position="0 0 0.01" width="2.4" color="#f3eede"></a-text>
+    </a-entity>
+    <a-entity class="ui buy" data-buy="speed" position="-1 -0.32 0.02">
+      <a-plane width="1.9" height="0.4" color="#3a4d2c"></a-plane>
+      <a-text class="buy-label" value="" align="center" position="0 0 0.01" width="2.4" color="#f3eede"></a-text>
+    </a-entity>
+    <a-entity class="ui buy" data-buy="heal" position="-1 -0.82 0.02">
+      <a-plane width="1.9" height="0.4" color="#3a4d2c"></a-plane>
+      <a-text class="buy-label" value="" align="center" position="0 0 0.01" width="2.4" color="#f3eede"></a-text>
+    </a-entity>
+
+    <a-entity class="ui startnext" position="1.05 -0.3 0.02">
+      <a-plane width="1.1" height="1.2" color="#c8732e"></a-plane>
+      <a-text value="Następna\nfala →" align="center" position="0 0 0.01" width="2" color="#fff"></a-text>
+    </a-entity>
+  </a-entity>
+
+</a-scene>
+
+<script>
+/* ============================================================
+   OBRONA ZAMKU — łucznik VR (A-Frame)
+   Średnie tempo · życie zamku + ulepszenia · dzień
+   ============================================================ */
+
+const G = {
+  state: 'menu',        // menu | playing | shop | over
+  score: 0,
+  gold: 0,
+  wave: 0,
+  hp: 100,
+  hpMax: 100,
+  dmg: 34,              // obrażenia strzały
+  arrowSpeed: 26,       // prędkość wylotu
+  enemiesLeft: 0,
+  spawnQueue: 0,
+  spawnTimer: 0,
+  costs: { dmg: 40, speed: 45, heal: 30 },
+};
+
+const sceneEl   = document.querySelector('#scene');
+const enemiesEl = document.querySelector('#enemies');
+const arrowsEl  = document.querySelector('#arrows');
+const merlonsEl = document.querySelector('#merlons');
+const overlay   = document.querySelector('#overlay');
+
+/* ---- Blanki na murze ---- */
+for (let i = -11; i <= 11; i += 2.2) {
+  const m = document.createElement('a-box');
+  m.setAttribute('position', `${i} 6.4 4.5`);
+  m.setAttribute('width', '1'); m.setAttribute('height', '0.9'); m.setAttribute('depth', '2');
+  m.setAttribute('color', '#a8a196');
+  merlonsEl.appendChild(m);
+}
+
+/* ---- HUD ---- */
+function updHUD(msg) {
+  document.querySelector('#hud-score').setAttribute('value', `Punkty ${G.score}\nZłoto ${G.gold}`);
+  document.querySelector('#hud-wave').setAttribute('value', G.wave ? `Fala ${G.wave}` : '');
+  document.querySelector('#hud-hp').setAttribute('value', `Zamek ${Math.max(0,Math.round(G.hp))}%`);
+  document.querySelector('#hud-msg').setAttribute('value', msg || '');
+}
+
+/* ============================================================
+   WROGOWIE
+   ============================================================ */
+function spawnEnemy() {
+  const e = document.createElement('a-entity');
+  const lane = (Math.random() * 5 - 2.5);
+  const z = -60 - Math.random() * 15;
+  e.setAttribute('position', `${lane} 0 ${z}`);
+
+  // ciało
+  const body = document.createElement('a-box');
+  body.setAttribute('width','0.7'); body.setAttribute('height','1.5'); body.setAttribute('depth','0.5');
+  body.setAttribute('position','0 0.9 0');
+  body.setAttribute('color', Math.random()<0.5 ? '#6b4a3a' : '#5b5048');
+  e.appendChild(body);
+  // głowa
+  const head = document.createElement('a-sphere');
+  head.setAttribute('radius','0.32'); head.setAttribute('position','0 1.95 0');
+  head.setAttribute('color','#caa176');
+  e.appendChild(head);
+  // hełm / akcent koloru wroga
+  const helm = document.createElement('a-cone');
+  helm.setAttribute('radius-bottom','0.34'); helm.setAttribute('radius-top','0');
+  helm.setAttribute('height','0.4'); helm.setAttribute('position','0 2.3 0');
+  helm.setAttribute('color','#7a1f1f');
+  e.appendChild(helm);
+
+  // strefa trafienia (większa, ułatwia celowanie)
+  const hit = document.createElement('a-box');
+  hit.setAttribute('width','0.9'); hit.setAttribute('height','2.4'); hit.setAttribute('depth','0.9');
+  hit.setAttribute('position','0 1.2 0');
+  hit.setAttribute('visible','false');
+  hit.classList.add('enemy-hit');
+  e.appendChild(hit);
+
+  e.classList.add('enemy');
+  e._hp = 100 + (G.wave - 1) * 18;   // rośnie z falą
+  e._speed = 1.5 + Math.min(G.wave * 0.12, 1.4);
+  e._alive = true;
+  enemiesEl.appendChild(e);
+}
+
+/* ============================================================
+   STRZAŁY
+   ============================================================ */
+function fireArrow(originPos, dir, power) {
+  const a = document.createElement('a-entity');
+  const shaft = document.createElement('a-cylinder');
+  shaft.setAttribute('radius','0.03'); shaft.setAttribute('height','1.0');
+  shaft.setAttribute('rotation','90 0 0');
+  shaft.setAttribute('color','#5a3a1a');
+  a.appendChild(shaft);
+  const tip = document.createElement('a-cone');
+  tip.setAttribute('radius-bottom','0.07'); tip.setAttribute('radius-top','0');
+  tip.setAttribute('height','0.2'); tip.setAttribute('rotation','-90 0 0');
+  tip.setAttribute('position','0 0 -0.6'); tip.setAttribute('color','#cfcfcf');
+  a.appendChild(tip);
+
+  a.setAttribute('position', `${originPos.x} ${originPos.y} ${originPos.z}`);
+  a.classList.add('arrow');
+  const v = new THREE.Vector3(dir.x, dir.y, dir.z).normalize().multiplyScalar(G.arrowSpeed * (0.55 + power*0.45));
+  a._vel = v;
+  a._life = 4;
+  arrowsEl.appendChild(a);
+}
+
+/* ============================================================
+   FALE
+   ============================================================ */
+function startWave(n) {
+  G.wave = n;
+  G.spawnQueue = 4 + n * 2;          // średnie tempo
+  G.enemiesLeft = G.spawnQueue;
+  G.spawnTimer = 0;
+  G.state = 'playing';
+  document.querySelector('#shop').setAttribute('visible', false);
+  updHUD(`Fala ${n} nadciąga!`);
+  setTimeout(()=>{ if(G.state==='playing') updHUD(''); }, 2500);
+}
+
+function endWave() {
+  G.state = 'shop';
+  G.gold += 20 + G.wave * 5;
+  refreshShop();
+  document.querySelector('#shop').setAttribute('visible', true);
+  updHUD(`Fala ${G.wave} odparta! Wzmocnij się i ruszaj dalej.`);
+}
+
+function refreshShop() {
+  const labels = document.querySelectorAll('.buy-label');
+  labels[0].setAttribute('value', `Mocniejsze strzały (+10 obr.)  ${G.costs.dmg}z`);
+  labels[1].setAttribute('value', `Szybszy łuk (+ prędkość)  ${G.costs.speed}z`);
+  labels[2].setAttribute('value', `Napraw zamek (+25%)  ${G.costs.heal}z`);
+}
+
+function buy(kind) {
+  const c = G.costs[kind];
+  if (G.gold < c) { updHUD('Za mało złota!'); return; }
+  G.gold -= c;
+  if (kind === 'dmg')   { G.dmg += 10; G.costs.dmg += 20; }
+  if (kind === 'speed') { G.arrowSpeed += 4; G.costs.speed += 22; }
+  if (kind === 'heal')  { G.hp = Math.min(G.hpMax, G.hp + 25); G.costs.heal += 18; }
+  refreshShop(); updHUD('Ulepszono!');
+}
+
+function gameOver() {
+  G.state = 'over';
+  document.querySelector('#shop').setAttribute('visible', false);
+  overlay.classList.remove('hidden');
+  document.querySelector('#ov-title').textContent = 'Zamek upadł';
+  document.querySelector('#ov-body').textContent =
+    `Obroniłeś ${G.wave-1>0?G.wave-1:0} fal i zdobyłeś ${G.score} punktów.`;
+  document.querySelector('#ov-controls').textContent = '';
+  document.querySelector('#ov-btn').textContent = 'Zagraj ponownie';
+}
+
+/* ============================================================
+   PĘTLA GRY
+   ============================================================ */
+const tmpV = new THREE.Vector3();
+let last = performance.now();
+
+function tick() {
+  const now = performance.now();
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+
+  if (G.state === 'playing') {
+    // spawn
+    if (G.spawnQueue > 0) {
+      G.spawnTimer -= dt;
+      if (G.spawnTimer <= 0) { spawnEnemy(); G.spawnQueue--; G.spawnTimer = 1.4; }
+    }
+
+    // ruch wrogów
+    const enemies = enemiesEl.children;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (!e._alive) continue;
+      const p = e.object3D.position;
+      p.z += e._speed * dt;
+      // dotarcie do bramy (z ~ 5)
+      if (p.z >= 4) {
+        e._alive = false;
+        enemiesEl.removeChild(e);
+        G.enemiesLeft--;
+        G.hp -= 12;
+        updHUD('Wróg przy bramie!');
+        if (G.hp <= 0) { gameOver(); return requestAnimationFrame(tick); }
+      }
+    }
+
+    // strzały: fizyka + kolizje
+    const arrows = arrowsEl.children;
+    for (let i = arrows.length - 1; i >= 0; i--) {
+      const a = arrows[i];
+      a._vel.y -= 9.8 * dt;               // grawitacja
+      const p = a.object3D.position;
+      p.x += a._vel.x * dt;
+      p.y += a._vel.y * dt;
+      p.z += a._vel.z * dt;
+      // orientacja strzały zgodnie z lotem
+      a.object3D.lookAt(p.x + a._vel.x, p.y + a._vel.y, p.z + a._vel.z);
+
+      a._life -= dt;
+      let dead = a._life <= 0 || p.y < 0;
+
+      // kolizja z wrogami
+      if (!dead) {
+        for (let j = enemies.length - 1; j >= 0; j--) {
+          const e = enemies[j];
+          if (!e._alive) continue;
+          tmpV.copy(e.object3D.position);
+          const dx = p.x - tmpV.x, dy = p.y - (tmpV.y + 1.2), dz = p.z - tmpV.z;
+          if (dx*dx + dy*dy + dz*dz < 0.9) {
+            e._hp -= G.dmg;
+            dead = true;
+            if (e._hp <= 0) {
+              e._alive = false;
+              enemiesEl.removeChild(e);
+              G.enemiesLeft--;
+              G.score += 10;
+              G.gold += 3;
+            }
+            updHUD('');
+            break;
+          }
+        }
+      }
+      if (dead && a.parentNode) arrowsEl.removeChild(a);
+    }
+
+    updHUD(document.querySelector('#hud-msg').getAttribute('value'));
+
+    // koniec fali
+    if (G.enemiesLeft <= 0 && G.spawnQueue <= 0) endWave();
+  }
+
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ============================================================
+   STEROWANIE
+   ============================================================ */
+const camEl = document.querySelector('#cam');
+
+function shootFromCamera(power) {
+  const cam = camEl.object3D;
+  const origin = new THREE.Vector3();
+  cam.getWorldPosition(origin);
+  // kierunek patrzenia kamery (lokalne -Z obrócone przez kwaternion kamery)
+  const look = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+  fireArrow(origin, look, power);
+}
+
+/* --- Desktop: przytrzymaj LPM = naciąganie, puść = strzał --- */
+let drawing = false, drawStart = 0;
+sceneEl.addEventListener('mousedown', (e) => {
+  if (G.state !== 'playing') return;
+  drawing = true; drawStart = performance.now();
+});
+window.addEventListener('mouseup', () => {
+  if (!drawing) return;
+  drawing = false;
+  if (G.state !== 'playing') return;
+  const power = Math.min((performance.now() - drawStart) / 900, 1);
+  shootFromCamera(0.4 + power * 0.6);
+});
+
+/* --- VR: spust prawego kontrolera = strzał (naciąg uproszczony) --- */
+const drawhand = document.querySelector('#drawhand');
+let vrDrawStart = 0;
+drawhand.addEventListener('triggerdown', () => { vrDrawStart = performance.now(); });
+drawhand.addEventListener('triggerup', () => {
+  if (G.state !== 'playing') return;
+  const power = Math.min((performance.now() - vrDrawStart) / 900, 1);
+  // kierunek: od ręki łuku do ręki naciągającej, rzutowany w przód — uproszczone do kierunku patrzenia
+  shootFromCamera(0.5 + power * 0.5);
+});
+
+/* --- Kliknięcia w sklepie (cursor / kontroler) --- */
+document.querySelectorAll('.buy').forEach(b => {
+  b.addEventListener('click', () => { if (G.state==='shop') buy(b.dataset.buy); });
+});
+document.querySelector('.startnext').addEventListener('click', () => {
+  if (G.state==='shop') startWave(G.wave + 1);
+});
+
+/* ============================================================
+   START / RESTART
+   ============================================================ */
+function resetGame() {
+  Object.assign(G, {
+    state:'playing', score:0, gold:0, wave:0, hp:100, hpMax:100,
+    dmg:34, arrowSpeed:26, enemiesLeft:0, spawnQueue:0, spawnTimer:0,
+    costs:{dmg:40, speed:45, heal:30},
+  });
+  while (enemiesEl.firstChild) enemiesEl.removeChild(enemiesEl.firstChild);
+  while (arrowsEl.firstChild)  arrowsEl.removeChild(arrowsEl.firstChild);
+  startWave(1);
+}
+
+document.querySelector('#ov-btn').addEventListener('click', () => {
+  overlay.classList.add('hidden');
+  resetGame();
+});
+</script>
+</body>
+</html>
